@@ -1,0 +1,6 @@
+[submodule "serviceator"]
+	path = crates/serviceator
+	url = https://github.com/kernel32dev/serviceator.git
+[submodule "crates/firewood"]
+	path = crates/firewood
+	url = https://github.com/kernel32dev/firewood.git
