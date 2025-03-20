@@ -4,8 +4,6 @@ mod config;
 use async_tungstenite::tungstenite::client::IntoClientRequest;
 
 fn main() {
-    cli::cli();
-
     if let Some(result) = serviceator::lifecycle::define_service(
         main,
         serviceator::ServiceInfo {
@@ -22,6 +20,8 @@ fn main() {
             }
         }
     }
+
+    cli::cli();
 
     if cfg!(debug_assertions) {
         let connect_request = "ws://127.0.0.1:9601".into_client_request().unwrap();

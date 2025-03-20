@@ -1033,7 +1033,7 @@ dependencies = [
 
 [[package]]
 name = "tcp_over_ws"
-version = "1.0.1"
+version = "1.0.2"
 dependencies = [
  "arc-swap",
  "async-tls",
