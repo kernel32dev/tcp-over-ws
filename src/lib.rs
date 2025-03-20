@@ -141,7 +141,12 @@ async fn handle_tcp_to_ws_connection(
 pub async fn ws_to_tcp_service(
     connect_addr: SocketAddr,
     listen: Vec<SocketAddr>,
-) -> std::io::Result<std::convert::Infallible> {
+) -> std::io::Result<()> {
+    let shutdown = if serviceator::lifecycle::is_service() {
+        Some(serviceator::lifecycle::attach_service().expect("failed to attach to service"))
+    } else {
+        None
+    };
     let server = tokio::net::TcpListener::bind(&listen[..]).await?;
     let sessions = &*Box::leak(Box::new(tokio::sync::RwLock::new(HashMap::<
         u64,
@@ -149,7 +154,7 @@ pub async fn ws_to_tcp_service(
     >::new())));
     tokio::spawn(async {
         loop {
-            tokio::time::sleep(Duration::from_secs(30)).await;
+            tokio::time::sleep(Duration::from_secs(1)).await;
             let mut lock = sessions.write().await;
             let ids = lock
                 .values()
@@ -166,17 +171,24 @@ pub async fn ws_to_tcp_service(
             }
         }
     });
-    loop {
-        match server.accept().await {
-            Ok((stream, _)) => {
-                tokio::spawn(handle_ws_to_tcp_connection(sessions, connect_addr, stream));
-            }
-            Err(error) => {
-                println!("Aviso: erro ao tentar aceitar conecção: {error:?}");
-                tokio::time::sleep(Duration::from_secs(1)).await;
+    let join = tokio::spawn(async move {
+        loop {
+            match server.accept().await {
+                Ok((stream, _)) => {
+                    tokio::spawn(handle_ws_to_tcp_connection(sessions, connect_addr, stream));
+                }
+                Err(error) => {
+                    println!("Aviso: erro ao tentar aceitar conecção: {error:?}");
+                    tokio::time::sleep(Duration::from_secs(1)).await;
+                }
             }
         }
+    });
+    match shutdown {
+        Some(shutdown) => shutdown.await,
+        None => join.await.expect("failed to join"),
     }
+    Ok(())
 }
 
 async fn handle_ws_to_tcp_connection(

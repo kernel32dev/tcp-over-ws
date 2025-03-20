@@ -36,8 +36,11 @@ fn main() {
 
     let (listen, connect_addr) = config::load_config().unwrap_or_else(|()| std::process::exit(1));
 
-    let error = tcp_over_ws::ws_to_tcp_service(connect_addr, listen).unwrap_err();
-
-    println!("erro ao escutar: {error:?}");
-    std::process::exit(1)
+    match tcp_over_ws::ws_to_tcp_service(connect_addr, listen) {
+        Ok(()) => {}
+        Err(error) => {
+            println!("erro ao escutar: {error:?}");
+            std::process::exit(1)
+        }
+    }
 }
