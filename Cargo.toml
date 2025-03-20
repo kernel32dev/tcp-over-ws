@@ -13,7 +13,7 @@ path = "src/main.rs"
 
 [package]
 name = "tcp_over_ws"
-version = "0.1.0"
+version = "1.0.1"
 edition = "2021"
 
 [dependencies]
