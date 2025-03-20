@@ -55,12 +55,16 @@ const UNKNOWN_ID: &'static str = match usize::BITS {
 };
 
 #[tokio::main]
+pub async fn bind(listen: &[SocketAddr]) -> std::io::Result<tokio::net::TcpListener> {
+    tokio::net::TcpListener::bind(listen).await
+}
+
+#[tokio::main]
 pub async fn tcp_to_ws_service(
     connect_request: http::Request<()>,
-    listen: Vec<SocketAddr>,
+    server: tokio::net::TcpListener,
     timeout: u64,
 ) -> std::io::Result<std::convert::Infallible> {
-    let server = tokio::net::TcpListener::bind(&listen[..]).await?;
     loop {
         match server.accept().await {
             Ok((stream, _)) => {
@@ -423,6 +427,35 @@ async fn try_handle_live_session<S: AsyncRead + AsyncWrite + Unpin>(
 }
 
 #[no_mangle]
+pub unsafe extern "stdcall" fn spawn_tcp_over_ws_test(
+    remote_ws_service: *const std::ffi::c_char,
+    local_listen: *const std::ffi::c_char,
+) -> u16 {
+    let remote_ws_service = (!remote_ws_service.is_null())
+        .then(|| {
+            std::ffi::CStr::from_ptr(remote_ws_service)
+                .to_str()
+                .unwrap_or("")
+        })
+        .unwrap_or("");
+    let local_listen = (!local_listen.is_null())
+        .then(|| {
+            std::ffi::CStr::from_ptr(local_listen)
+                .to_str()
+                .unwrap_or("")
+        })
+        .unwrap_or("");
+    let Ok(_) = remote_ws_service.into_client_request() else {
+        return 0;
+    };
+    let listen = addr::parse_many_socket_addr(local_listen);
+    if listen.is_empty() {
+        return 0;
+    }
+    u16::MAX
+}
+
+#[no_mangle]
 pub unsafe extern "stdcall" fn spawn_tcp_over_ws(
     remote_ws_service: *const std::ffi::c_char,
     local_listen: *const std::ffi::c_char,
@@ -450,8 +483,11 @@ pub unsafe extern "stdcall" fn spawn_tcp_over_ws(
         return 0;
     }
     let timeout = if timeout < 0 { 0 } else { timeout as u64 };
+    let Ok(server) = bind(&listen[..]) else {
+        return 0;
+    };
     std::thread::spawn(move || {
-        let _ = tcp_to_ws_service(connect_request, listen, timeout as u64);
+        let _ = tcp_to_ws_service(connect_request, server, timeout as u64);
     });
     u16::MAX
 }

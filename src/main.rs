@@ -26,9 +26,10 @@ fn main() {
     if cfg!(debug_assertions) {
         let connect_request = "ws://127.0.0.1:9601".into_client_request().unwrap();
         std::thread::spawn(move || {
+            let server = tcp_over_ws::bind(&["127.0.0.1:19258".parse().unwrap()]).unwrap();
             tcp_over_ws::tcp_to_ws_service(
-                connect_request.clone(),
-                vec!["127.0.0.1:19258".parse().unwrap()],
+                connect_request,
+                server,
                 tcp_over_ws::DEFAULT_TIMEOUT_MS,
             )
         });
