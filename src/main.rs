@@ -26,12 +26,14 @@ fn main() {
     if cfg!(debug_assertions) {
         let connect_request = "ws://127.0.0.1:9601".into_client_request().unwrap();
         std::thread::spawn(move || {
-            let server = tcp_over_ws::bind(&["127.0.0.1:19258".parse().unwrap()]).unwrap();
-            tcp_over_ws::tcp_to_ws_service(
-                connect_request,
-                server,
-                tcp_over_ws::DEFAULT_TIMEOUT_MS,
-            )
+            let listen = ["127.0.0.1:19258".parse().unwrap()];
+        
+            let rt = tokio::runtime::Builder::new_current_thread().enable_all().build().unwrap();
+            let _enter_guard = rt.enter();
+            let Ok(server) = rt.block_on(tcp_over_ws::bind(&listen[..])) else {
+                return;
+            };
+            let _ = rt.block_on(tcp_over_ws::tcp_to_ws_service(connect_request, server, tcp_over_ws::DEFAULT_TIMEOUT_MS));
         });
     }
 

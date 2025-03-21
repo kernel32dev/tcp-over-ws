@@ -54,12 +54,10 @@ const UNKNOWN_ID: &'static str = match usize::BITS {
     _ => "?",
 };
 
-#[tokio::main]
 pub async fn bind(listen: &[SocketAddr]) -> std::io::Result<tokio::net::TcpListener> {
     tokio::net::TcpListener::bind(listen).await
 }
 
-#[tokio::main]
 pub async fn tcp_to_ws_service(
     connect_request: http::Request<()>,
     server: tokio::net::TcpListener,
@@ -483,11 +481,19 @@ pub unsafe extern "stdcall" fn spawn_tcp_over_ws(
         return 0;
     }
     let timeout = if timeout < 0 { 0 } else { timeout as u64 };
-    let Ok(server) = bind(&listen[..]) else {
+
+    let rt = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .unwrap();
+    let enter_guard = rt.enter();
+    let Ok(server) = rt.block_on(bind(&listen[..])) else {
         return 0;
     };
+    drop(enter_guard);
     std::thread::spawn(move || {
-        let _ = tcp_to_ws_service(connect_request, server, timeout as u64);
+        let _enter_guard = rt.enter();
+        let _ = rt.block_on(tcp_to_ws_service(connect_request, server, timeout as u64));
     });
     u16::MAX
 }
