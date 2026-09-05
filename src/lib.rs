@@ -139,7 +139,7 @@ async fn handle_tcp_to_ws_connection(
     }
 }
 
-#[tokio::main]
+#[tokio::main(flavor = "multi_thread")]
 pub async fn ws_to_tcp_service(
     connect_addr: SocketAddr,
     listen: Vec<SocketAddr>,
@@ -154,29 +154,30 @@ pub async fn ws_to_tcp_service(
         u64,
         Arc<tokio::sync::Mutex<Session>>,
     >::new())));
-    tokio::spawn(async {
-        loop {
-            tokio::time::sleep(Duration::from_secs(1)).await;
-            let mut lock = sessions.write().await;
-            let ids = lock
-                .values()
-                .filter_map(|x| {
-                    x.clone()
-                        .try_lock_owned()
-                        .ok()
-                        .filter(|x| x.last_use.elapsed() > Duration::from_millis(x.timeout))
-                        .map(|x| x.id)
-                })
-                .collect::<Vec<_>>();
-            for id in &ids {
-                lock.remove(id);
-            }
-        }
-    });
+    // tokio::spawn(async {
+    //     loop {
+    //         tokio::time::sleep(Duration::from_secs(1)).await;
+    //         let mut lock = sessions.write().await;
+    //         let ids = lock
+    //             .values()
+    //             .filter_map(|x| {
+    //                 x.clone()
+    //                     .try_lock_owned()
+    //                     .ok()
+    //                     .filter(|x| x.last_use.elapsed() > Duration::from_millis(x.timeout))
+    //                     .map(|x| x.id)
+    //             })
+    //             .collect::<Vec<_>>();
+    //         for id in &ids {
+    //             lock.remove(id);
+    //         }
+    //     }
+    // });
     let join = tokio::spawn(async move {
         loop {
             match server.accept().await {
                 Ok((stream, _)) => {
+                    println!("[{} {UNKNOWN_ID}] Nova conecção tcp...", Direction::WsToTcp);
                     tokio::spawn(handle_ws_to_tcp_connection(sessions, connect_addr, stream));
                 }
                 Err(error) => {
@@ -223,12 +224,18 @@ async fn handle_ws_to_tcp_connection(
     match result {
         Ok(websocket) => {
             println!("[{dir} {tow_id:016x}] Websocket adquirido");
-            let session = sessions.read().await.get(&tow_id).cloned();
+            let lock = sessions.read().await;
+            println!("[{dir} {tow_id:016x}] Read lock adquirido");
+            let session = lock.get(&tow_id).cloned();
+            drop(lock);
+            println!("[{dir} {tow_id:016x}] Read lock solto");
             let session = match session {
                 Some(session) => session,
                 None => {
+                    println!("[{dir} {tow_id:016x}] Write lock ...");
                     let mut lock = sessions.write().await;
-                    lock.entry(tow_id)
+                    println!("[{dir} {tow_id:016x}] Write lock adquirido");
+                    let session = lock.entry(tow_id)
                         .or_insert_with(|| {
                             Arc::new(tokio::sync::Mutex::new(Session {
                                 tcp: None,
@@ -241,16 +248,22 @@ async fn handle_ws_to_tcp_connection(
                                 last_use: Instant::now(),
                             }))
                         })
-                        .clone()
+                        .clone();
+                    drop(lock);
+                    println!("[{dir} {tow_id:016x}] Write lock solto");
+                    session
                 }
             };
             if let Ok(mut session) = session.try_lock_owned() {
+                println!("[{dir} {tow_id:016x}] Lock da sessão adquirido");
                 if !session.closed && session.tcp.is_none() {
+                    println!("[{dir} {tow_id:016x}] Conectando tcp local");
                     session.tcp = Some(
                         tokio::net::TcpStream::connect(connect_addr)
                             .await
                             .expect("TODO! handle error"),
                     );
+                    println!("[{dir} {tow_id:016x}] Conecção tcp local criada");
                 }
                 handle_live_session(Direction::WsToTcp, &mut *session, websocket).await;
             } else {
@@ -325,6 +338,7 @@ async fn try_handle_live_session<S: AsyncRead + AsyncWrite + Unpin>(
     .await
     .map_err(Box::new)
     .map_err(SessionError::WsError)?;
+    println!("Primeira mensagem enviada: {}", session.write_cursor);
 
     let mut buffer = Vec::new();
     buffer.reserve_exact(1024 * 4);
